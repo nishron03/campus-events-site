@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#5f8f80" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1b1d20" media="(prefers-color-scheme: dark)">
+  <title>Campus Talks &amp; Events</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="lock" class="lock" hidden>
+    <form id="lock-form" class="lock-card" autocomplete="on">
+      <img src="icon.svg" alt="" class="lock-icon" width="56" height="56">
+      <h1>Campus</h1>
+      <p class="muted">Enter the passphrase to open your talks and events.</p>
+      <input type="text" name="username" value="campus" autocomplete="username" hidden>
+      <input id="pass" type="password" autocomplete="current-password" placeholder="passphrase" required autofocus>
+      <label class="check"><input id="remember" type="checkbox" checked> Remember on this device</label>
+      <button type="submit" class="primary">Unlock</button>
+      <p id="lock-error" class="error" role="alert" hidden></p>
+    </form>
+  </div>
+
+  <div id="app" hidden>
+    <header class="top">
+      <div class="title-row">
+        <h1>Campus</h1>
+        <button id="lock-btn" class="ghost small" title="Forget passphrase on this device">Lock</button>
+      </div>
+      <p id="updated" class="muted small"></p>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="talks" class="tab active">Talks</button>
+        <button role="tab" data-tab="events" class="tab">Events</button>
+        <button role="tab" data-tab="mine" class="tab">My list <span id="mine-count" class="count"></span></button>
+      </nav>
+      <div class="controls">
+        <input id="search" type="search" placeholder="Search title, speaker, venue…" aria-label="Search">
+        <label class="toggle"><input id="hide-past" type="checkbox" checked> <span>Hide past</span></label>
+      </div>
+      <div id="chips" class="chips"></div>
+    </header>
+    <main id="list" class="list" aria-live="polite"></main>
+    <footer class="foot muted small">Picks are stored on this device only.</footer>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
