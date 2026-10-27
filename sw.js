@@ -1,6 +1,6 @@
 /* Service worker: stale-while-revalidate app shell, network-first encrypted data. */
-const VERSION = 'v1';
-const SHELL = ['./', 'index.html', 'app.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+const VERSION = 'v2';
+const SHELL = ['./', 'index.html', 'app.js', 'sync.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open('shell-' + VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });

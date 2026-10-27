@@ -2,7 +2,10 @@
 (() => {
   'use strict';
   const TZ = 'Asia/Kolkata';
-  const LS = { pass: 'ce.passphrase', picks: 'ce.picks', last: 'ce.lastVisit', ui: 'ce.ui' };
+  const LS = { pass: 'ce.passphrase', picks: 'ce.picks', picks2: 'ce.picks.v2', last: 'ce.lastVisit', ui: 'ce.ui',
+    token: 'ce.sync.token', dirty: 'ce.sync.dirty', lastSync: 'ce.sync.last' };
+  const SYNC = { owner: 'nishron03', repo: 'campus-events-picks', path: 'picks.enc.json' };
+  const S = window.CESync;
   const TALK_CATS = [['all', 'All'], ['core', 'Core research'], ['physics', 'Physics'], ['other', 'Other'], ['social', 'Social']];
   const EVENT_CATS = [['all', 'All'], ['event', 'Events'], ['opportunity', 'Opportunities']];
   const CAT_LABEL = { core: 'Core research', physics: 'Physics', other: 'Other', social: 'Social', event: 'Event', opportunity: 'Opportunity' };
@@ -10,7 +13,8 @@
   const $ = (s) => document.querySelector(s);
   let DATA = null, prevVisit = null, expanded = new Set();
   let ui = Object.assign({ tab: 'talks', talkCat: 'all', eventCat: 'all', hidePast: true }, readJSON(LS.ui, {}));
-  let picks = readJSON(LS.picks, {});
+  let PASS = null; // passphrase in memory after unlock (needed to encrypt synced picks)
+  let pickState = loadPicks(), picks = S.effective(pickState);
 
   function readJSON(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }
   function saveUI() { localStorage.setItem(LS.ui, JSON.stringify(ui)); }
@@ -75,10 +79,29 @@
   }
 
   /* ---------- picks / new ---------- */
-  function setPick(id, v) {
-    if (picks[id] === v) delete picks[id]; else picks[id] = v;
+  // ce.picks.v2 = {id: {pick, updated_at}} incl. tombstones (pick: null). ce.picks (plain {id: pick}) is kept
+  // as a mirror so an older cached app version still sees the right picks.
+  function loadPicks() {
+    const v2 = readJSON(LS.picks2, null);
+    if (v2 && typeof v2 === 'object') {
+      const r = S.reconcileLegacy(S.cleanState(v2), readJSON(LS.picks, {}));
+      if (r.changed) { localStorage.setItem(LS.picks2, JSON.stringify(r.state)); localStorage.setItem(LS.dirty, '1'); }
+      return r.state;
+    }
+    const migrated = S.fromLegacy(readJSON(LS.picks, {}));
+    localStorage.setItem(LS.picks2, JSON.stringify(migrated));
+    if (Object.keys(migrated).length) localStorage.setItem(LS.dirty, '1');
+    return migrated;
+  }
+  function savePicks(state) {
+    pickState = state; picks = S.effective(state);
+    localStorage.setItem(LS.picks2, JSON.stringify(state));
     localStorage.setItem(LS.picks, JSON.stringify(picks));
-    render();
+  }
+  function setPick(id, v) {
+    savePicks(S.setPick(S.cleanState(readJSON(LS.picks2, pickState)), id, v));
+    localStorage.setItem(LS.dirty, '1');
+    render(); sync.soon();
   }
   const isNew = (it) => prevVisit && it.added_at && new Date(it.added_at) > new Date(prevVisit);
 
@@ -176,6 +199,116 @@
     $('#list').innerHTML = html || '<p class="empty">No matching items.</p>';
   }
 
+  /* ---------- sync (optional; local-only without a token) ---------- */
+  const sync = (() => {
+    let timer = null, running = null, again = false, lastRun = 0, retryMs = 0, state = 'local', detail = '';
+    const token = () => localStorage.getItem(LS.token);
+    const dirty = () => localStorage.getItem(LS.dirty) === '1';
+    const ago = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : fmtFull.format(new Date(t)) + ' IST'; };
+    const LABEL = { local: 'This device', ok: 'Synced', busy: 'Syncing…', pending: 'Not synced yet', offline: 'Offline', error: 'Sync paused' };
+    function show(s, d) {
+      state = s; if (d !== undefined) detail = d;
+      const pill = $('#sync-pill'); if (!pill) return;
+      pill.dataset.state = s; $('#sync-label').textContent = LABEL[s];
+      const last = +localStorage.getItem(LS.lastSync) || 0;
+      const line = s === 'local' ? 'Not connected. Picks are saved on this device only.'
+        : s === 'ok' ? 'Synced ' + ago(last) + '.'
+        : s === 'busy' ? 'Syncing…'
+        : s === 'offline' ? 'Offline. Changes are saved here and will sync when you are back online.'
+        : s === 'pending' ? 'Changes saved here, syncing shortly.'
+        : (detail || 'Sync failed.') + (last ? ' Last synced ' + ago(last) + '.' : '');
+      pill.title = line;
+      $('#sync-status').dataset.state = s; $('#sync-detail').textContent = line;
+      $('#sync-connect').hidden = !!token(); $('#sync-connected').hidden = !token();
+      $('#foot-note').textContent = token() ? 'Picks sync across your devices (encrypted).' : 'Picks are stored on this device only.';
+    }
+    function idle() {
+      if (!token()) return show('local');
+      if (!navigator.onLine) return show('offline');
+      show(dirty() ? 'pending' : 'ok');
+    }
+    async function run(tok) {
+      tok = tok || token();
+      if (!tok || !PASS) return idle();
+      if (!navigator.onLine) return show('offline');
+      if (running) { again = true; return running; }
+      clearTimeout(timer); timer = null; lastRun = Date.now();
+      show('busy');
+      running = (async () => {
+        const api = S.client({ token: tok, ...SYNC });
+        const wasDirty = dirty(); localStorage.removeItem(LS.dirty);
+        try {
+          const r = await S.syncOnce({ api, passphrase: PASS, getLocal: () => S.cleanState(readJSON(LS.picks2, pickState)), device: deviceName() });
+          // merge again: keeps any pick made while the request was in flight
+          const latest = S.cleanState(readJSON(LS.picks2, pickState)), merged = S.merge(latest, r.state);
+          if (!S.sameState(merged, r.state)) localStorage.setItem(LS.dirty, '1'); // edits made mid-flight
+          if (!S.sameState(merged, pickState)) { savePicks(merged); render(); } else savePicks(merged);
+          localStorage.setItem(LS.lastSync, String(Date.now())); retryMs = 0;
+          return { ok: true };
+        } catch (e) {
+          if (wasDirty || dirty()) localStorage.setItem(LS.dirty, '1');
+          const kind = e && e.kind;
+          if (kind === 'network') {
+            retryMs = Math.min(retryMs ? retryMs * 2 : 30000, 300000);
+            show(navigator.onLine ? 'error' : 'offline', "Couldn't reach GitHub, will retry.");
+            timer = setTimeout(() => run(), retryMs);
+          } else show('error', (e && e.message) || 'Sync failed.');
+          return { ok: false, error: e };
+        } finally {
+          running = null;
+          if (state === 'busy') idle();
+          if (again || (dirty() && token() && navigator.onLine && state !== 'error')) { again = false; soon(); }
+        }
+      })();
+      return running;
+    }
+    function soon(ms = 1200) {
+      if (!token()) return idle();
+      if (state !== 'busy') show(navigator.onLine ? 'pending' : 'offline');
+      clearTimeout(timer); timer = setTimeout(() => run(), ms);
+    }
+    function deviceName() {
+      const ua = navigator.userAgent;
+      return /Android/i.test(ua) ? 'Android' : /Mac OS X/i.test(ua) ? 'Mac' : /Linux/i.test(ua) ? 'Linux' : 'browser';
+    }
+    function bindUI() {
+      const dlg = $('#sync-dlg');
+      const open = () => { idle(); $('#sync-error').hidden = true; dlg.showModal ? dlg.showModal() : dlg.setAttribute('open', ''); };
+      $('#sync-pill').addEventListener('click', open);
+      $('#foot-note').addEventListener('click', open);
+      $('#sync-close').addEventListener('click', () => dlg.close ? dlg.close() : dlg.removeAttribute('open'));
+      $('#sync-connect').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const tok = $('#sync-token').value.trim(), btn = $('#sync-save'), err = $('#sync-error');
+        err.hidden = true; if (!tok) return;
+        btn.disabled = true; btn.textContent = 'Connecting…';
+        localStorage.setItem(LS.dirty, '1'); // first sync uploads everything this device has
+        const r = await run(tok);
+        btn.disabled = false; btn.textContent = 'Connect';
+        if (r && !r.ok && r.error && r.error.kind !== 'network') {
+          err.textContent = r.error.message; err.hidden = false; idle(); return;
+        }
+        localStorage.setItem(LS.token, tok); $('#sync-token').value = '';
+        if (r && !r.ok) { err.textContent = "Saved. Couldn't reach GitHub yet; will sync when online."; err.hidden = false; }
+        idle(); if (dirty()) soon();
+      });
+      $('#sync-now').addEventListener('click', () => run());
+      $('#sync-disconnect').addEventListener('click', () => {
+        localStorage.removeItem(LS.token); localStorage.removeItem(LS.lastSync); clearTimeout(timer); idle();
+      });
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onFocus(); });
+      window.addEventListener('focus', onFocus);
+      window.addEventListener('online', () => soon(300));
+      window.addEventListener('offline', () => idle());
+      window.addEventListener('storage', (e) => { // another tab changed picks
+        if (e.key === LS.picks2) { pickState = S.cleanState(readJSON(LS.picks2, {})); picks = S.effective(pickState); render(); }
+        if (e.key === LS.token) idle();
+      });
+    }
+    function onFocus() { if (token() && Date.now() - lastRun > 5000) run(); }
+    return { run, soon, idle, bindUI };
+  })();
+
   /* ---------- events ---------- */
   function bind() {
     document.querySelector('.tabs').addEventListener('click', (e) => {
@@ -196,6 +329,7 @@
     $('#hide-past').checked = ui.hidePast;
     $('#hide-past').addEventListener('change', (e) => { ui.hidePast = e.target.checked; saveUI(); render(); });
     $('#lock-btn').addEventListener('click', () => { localStorage.removeItem(LS.pass); location.reload(); });
+    sync.bindUI();
   }
 
   function onUnlocked(data) {
@@ -209,6 +343,7 @@
     $('#updated').textContent = g ? 'Last updated ' + fmtFull.format(g) + ' IST · ' + data.items.length + ' items' : '';
     $('#lock').hidden = true; $('#app').hidden = false;
     bind(); render();
+    sync.idle(); sync.run();
   }
 
   async function start() {
@@ -216,7 +351,7 @@
     try { env = await fetchEnvelope(); } catch (e) { showLock(e.message); return; }
     const saved = localStorage.getItem(LS.pass);
     if (saved) {
-      try { onUnlocked(await decrypt(env, saved)); return; } catch { localStorage.removeItem(LS.pass); }
+      try { const d = await decrypt(env, saved); PASS = saved; onUnlocked(d); return; } catch { localStorage.removeItem(LS.pass); }
     }
     showLock();
     $('#lock-form').addEventListener('submit', async (e) => {
@@ -226,7 +361,7 @@
       try {
         const data = await decrypt(env, pass);
         if ($('#remember').checked) localStorage.setItem(LS.pass, pass);
-        onUnlocked(data);
+        PASS = pass; onUnlocked(data);
       } catch {
         $('#lock-error').textContent = 'That passphrase did not work.'; $('#lock-error').hidden = false;
       } finally { btn.disabled = false; btn.textContent = 'Unlock'; }

@@ -105,3 +105,27 @@ a { color: var(--accent); }
   #app { padding-top: 32px; }
   .card { padding: 18px 22px 14px; }
 }
+
+/* sync */
+.title-actions { display: flex; gap: 8px; align-items: center; }
+.sync-pill { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: .6; flex: none; display: inline-block; }
+[data-state=ok] .dot { background: var(--accent); opacity: 1; }
+[data-state=busy] .dot, [data-state=pending] .dot { background: var(--accent); opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
+[data-state=offline] .dot { background: var(--warn); opacity: 1; }
+[data-state=error] .dot { background: var(--danger); opacity: 1; }
+@keyframes pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } }
+.linkish { background: none; border: 0; padding: 0; cursor: pointer; color: inherit; font-size: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
+.sheet { width: min(440px, calc(100vw - 32px)); border: 0; border-radius: 22px; padding: 22px 22px 18px; background: var(--card); color: var(--text); box-shadow: var(--shadow); }
+.sheet::backdrop { background: rgba(20, 18, 14, .35); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; }
+.sheet h2 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.sheet p { margin: 10px 0; }
+.sheet code { font-size: .85em; background: var(--accent-soft); padding: 1px 5px; border-radius: 6px; overflow-wrap: anywhere; }
+.status-line { display: flex; gap: 8px; align-items: baseline; background: var(--bg); border-radius: 12px; padding: 10px 12px; }
+#sync-connect { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+#sync-connect p { margin: 0; }
+#sync-token { padding: 11px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); font-family: ui-monospace, monospace; font-size: .9rem; }
+.sheet-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.sheet-actions .ghost { padding: 9px 12px; }

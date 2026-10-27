@@ -31,7 +31,10 @@
     <header class="top">
       <div class="title-row">
         <h1>Campus</h1>
-        <button id="lock-btn" class="ghost small" title="Forget passphrase on this device">Lock</button>
+        <div class="title-actions">
+          <button id="sync-pill" class="ghost small sync-pill" data-state="local" aria-haspopup="dialog"><span class="dot" aria-hidden="true"></span><span id="sync-label">This device</span></button>
+          <button id="lock-btn" class="ghost small" title="Forget passphrase on this device">Lock</button>
+        </div>
       </div>
       <p id="updated" class="muted small"></p>
       <nav class="tabs" role="tablist">
@@ -46,8 +49,29 @@
       <div id="chips" class="chips"></div>
     </header>
     <main id="list" class="list" aria-live="polite"></main>
-    <footer class="foot muted small">Picks are stored on this device only.</footer>
+    <footer class="foot muted small"><button id="foot-note" class="linkish">Picks are stored on this device only.</button></footer>
   </div>
+
+  <dialog id="sync-dlg" class="sheet" aria-labelledby="sync-title">
+    <div class="sheet-head">
+      <h2 id="sync-title">Sync picks</h2>
+      <button id="sync-close" class="ghost small" type="button">Close</button>
+    </div>
+    <p class="muted small">Keeps your To-do / Maybe / Skip picks the same on all your devices. They are encrypted with your passphrase and saved in your private GitHub repo <code>nishron03/campus-events-picks</code>.</p>
+    <p id="sync-status" class="status-line small" data-state="local"><span class="dot" aria-hidden="true"></span><span id="sync-detail"></span></p>
+    <form id="sync-connect" autocomplete="off">
+      <label for="sync-token" class="small muted">GitHub token (fine-grained, this repo only, Contents: read &amp; write)</label>
+      <input id="sync-token" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="github_pat_…" data-1p-ignore data-lpignore="true">
+      <button id="sync-save" type="submit" class="primary">Connect</button>
+      <p class="muted small">Paste it once on each device. It stays in this browser only.</p>
+    </form>
+    <div id="sync-connected" class="sheet-actions" hidden>
+      <button id="sync-now" type="button" class="primary">Sync now</button>
+      <button id="sync-disconnect" type="button" class="ghost">Disconnect this device</button>
+    </div>
+    <p id="sync-error" class="error small" role="alert" hidden></p>
+  </dialog>
+  <script src="sync.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
